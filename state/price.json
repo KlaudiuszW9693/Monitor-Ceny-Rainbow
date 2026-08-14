@@ -1,0 +1,16 @@
+{
+  "title": "Blue Bay Beach Resort - Rodos",
+  "price": 3142.0,
+  "currency": "PLN",
+  "source": "json-ld",
+  "extras": {
+    "Cena razem": 6284.0,
+    "Cena regularna": 3742.0,
+    "Najniższa cena z 30 dni": 3142.0,
+    "Zaliczka": 620.0
+  },
+  "misses": 0,
+  "last_check_date": "2026-08-14",
+  "first_seen": "2026-08-14T18:29:57+00:00",
+  "last_change": "2026-08-14T18:29:57+00:00"
+}
