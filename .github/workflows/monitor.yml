@@ -1,0 +1,71 @@
+name: Monitor ceny Rainbow
+
+on:
+  schedule:
+    # Co 10 minut. GitHub potrafi opoznic start o kilka minut przy duzym ruchu -
+    # to normalne i nie psuje monitoringu.
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}   # pozwala odpalic recznie z zakladki Actions
+
+permissions:
+  contents: write         # potrzebne, by zapisac ostatnia cene do repo
+
+concurrency:
+  group: monitor-ceny
+  cancel-in-progress: false   # nie przerywaj trwajacego sprawdzenia
+
+jobs:
+  sprawdz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Zaleznosci
+        run: pip install -r requirements.txt
+
+      # Uruchamia sie tylko, gdy ustawisz zmienna USE_BROWSER na "true".
+      # Dla oferty z r.pl nie jest potrzebne - cena jest w HTML.
+      - name: Przegladarka (tylko gdy USE_BROWSER=true)
+        if: vars.USE_BROWSER == 'true'
+        run: |
+          pip install -r requirements-browser.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Sprawdz cene
+        env:
+          OFFER_URL: ${{ vars.OFFER_URL }}
+          PRICE_LABEL: ${{ vars.PRICE_LABEL }}
+          PRICE_SELECTOR: ${{ vars.PRICE_SELECTOR }}
+          USE_BROWSER: ${{ vars.USE_BROWSER }}
+          CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
+          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: python monitor.py
+
+      # always() - stan musi sie zapisac takze wtedy, gdy sprawdzenie sie nie udalo.
+      # Inaczej licznik nieudanych prob nigdy nie doszedlby do progu alertu.
+      - name: Zapisz stan w repo
+        if: always()
+        run: |
+          if [ -d state ] && [ -n "$(git status --porcelain -- state)" ]; then
+            git config user.name "monitor-ceny"
+            git config user.email "actions@github.com"
+            git add state
+            git commit -m "stan: sprawdzenie ceny $(date -u +%F)"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+            git push
+          else
+            echo "Brak zmian w stanie - nic do zapisania."
+          fi
