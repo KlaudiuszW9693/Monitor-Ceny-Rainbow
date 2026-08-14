@@ -3,9 +3,6 @@
 Sprawdza cenę wybranej oferty co 10 minut i wysyła Ci wiadomość na WhatsAppie
 (opcjonalnie także maila), gdy cena się zmieni.
 
-Śledzona oferta: **Blue Bay Beach Resort – Rodos**, cena wyjściowa **2 979 zł/os.**
-(cena razem 5 958 zł).
-
 ---
 
 ## Jak to działa
@@ -26,7 +23,7 @@ Powiadomienie leci wtedy, gdy:
 
 ## Krok 1 — WhatsApp (2 minuty, jednorazowo)
 
-1. Dodaj do kontaktów w telefonie numer **+34 644 51 95 23** (bot CallMeBot).
+1. Dodaj do kontaktów w telefonie numer **+34 644 87 21 57** (bot CallMeBot).
 2. Wyślij mu na WhatsAppie dokładnie taką wiadomość:
    `I allow callmebot to send me messages`
 3. Odpisze Ci wiadomością z Twoim **API key** — zapisz go.
