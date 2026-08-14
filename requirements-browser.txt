@@ -1,0 +1,5 @@
+# Doinstaluj tylko jesli cena nie da sie odczytac zwyklym HTTP
+# (czyli gdy strona dokłada cenę JavaScriptem).
+#   pip install -r requirements-browser.txt
+#   python -m playwright install chromium
+playwright>=1.45
