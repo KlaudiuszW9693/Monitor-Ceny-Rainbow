@@ -1,20 +1,9 @@
 #!/usr/bin/env python3
-"""
-Monitor ceny oferty na rainbowtours.pl
-
-Tryby uruchomienia:
-    python monitor.py              # jedno sprawdzenie: pobierz, porownaj, powiadom
-    python monitor.py --discover   # wypisz wszystkie znalezione ceny (do wyboru selektora)
-    python monitor.py --test       # wyslij testowe powiadomienie i zakoncz
-    python monitor.py --loop       # petla lokalna, sprawdza co CHECK_INTERVAL sekund
-
-Konfiguracja idzie ze zmiennych srodowiskowych albo z pliku .env obok skryptu.
-Patrz .env.example.
-"""
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
@@ -92,6 +81,23 @@ def safe_err(exc: Exception, url: str) -> str:
         if query:
             text = text.replace(query, "<parametry>").replace(base, "<oferta>")
     return text
+
+
+def offer_urls() -> list[str]:
+    """
+    OFFER_URL moze zawierac wiele adresow - po jednym w linii (albo po przecinku
+    lub sredniku). Dodanie kolejnej oferty to dopisanie linii w .env / w zmiennej
+    OFFER_URL w GitHubie. Kodu nie ruszasz.
+    """
+    return [u for u in re.split(r"[\s,;]+", cfg("OFFER_URL")) if u.startswith("http")]
+
+
+def offer_key(url: str) -> str:
+    """
+    Krotki identyfikator oferty do pliku stanu. Skrot, nie adres - stan laduje
+    w publicznym repozytorium (patrz komentarz w append_history).
+    """
+    return hashlib.sha1(url.encode("utf-8")).hexdigest()[:10]
 
 
 def cfg_bool(name: str, default: bool = False) -> bool:
@@ -359,7 +365,7 @@ def save_state(state: dict) -> None:
     )
 
 
-def append_history(price: float, currency: str) -> None:
+def append_history(key: str, price: float, currency: str) -> None:
     """
     Historia nie zawiera adresu oferty. Repozytorium jest publiczne (darmowe
     minuty Actions), a pliki stanu sa w nim commitowane - link do oferty
@@ -370,10 +376,10 @@ def append_history(price: float, currency: str) -> None:
     with HISTORY_FILE.open("a", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         if is_new:
-            writer.writerow(["czas_utc", "cena", "waluta"])
+            writer.writerow(["czas_utc", "oferta", "cena", "waluta"])
         writer.writerow([
             datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-            f"{price:.2f}", currency,
+            key, f"{price:.2f}", currency,
         ])
 
 
@@ -451,15 +457,11 @@ def notify(subject: str, body: str) -> None:
 # Jedno sprawdzenie
 # --------------------------------------------------------------------------- #
 
-def check_once() -> int:
-    url = cfg("OFFER_URL")
-    if not url:
-        print("BLAD: brak OFFER_URL - wklej adres oferty do .env")
-        return 2
-
+def check_offer(url: str, state: dict) -> tuple[int, dict]:
+    """Sprawdza jedna oferte. Zwraca (kod_wyjscia, zaktualizowany_stan)."""
+    key = offer_key(url)
     selector = cfg("PRICE_SELECTOR")
     use_browser = cfg_bool("USE_BROWSER", False)
-    state = load_state()
     now = datetime.now(timezone.utc)
 
     html, how = "", ""
@@ -489,7 +491,6 @@ def check_once() -> int:
         misses = state.get("misses", 0) + 1
         state["misses"] = misses
         state["last_check_date"] = now.strftime("%Y-%m-%d")
-        save_state(state)
         print(f"  ! nie znaleziono ceny (nieudane proby z rzedu: {misses})")
         if misses == MISSING_ALERT_AFTER:
             notify(
@@ -500,7 +501,7 @@ def check_once() -> int:
         # Pojedyncza wtopa sieciowa to nie awaria - konczymy zerem, zeby przebieg
         # w Actions zostal zielony i nie zasypywal Cie mailami o bledzie.
         # Czerwono robi sie dopiero, gdy problem sie utrwali.
-        return 1 if misses >= MISSING_ALERT_AFTER else 0
+        return (1 if misses >= MISSING_ALERT_AFTER else 0), state
 
     currency = detect_currency(html)
     title = page_title(html)
@@ -536,8 +537,7 @@ def check_once() -> int:
     if previous is None:
         state["first_seen"] = now.isoformat(timespec="seconds")
         state["last_change"] = state["first_seen"]
-        save_state(state)
-        append_history(price, currency)
+        append_history(key, price, currency)
         print(f"  Zapisano cene wyjsciowa: {pln(price)} {currency}")
         notify(
             "Rainbow: monitoring wystartowal",
@@ -546,13 +546,12 @@ def check_once() -> int:
             f"{extras_text}\n{url}\n\n"
             f"Od teraz dostaniesz wiadomosc przy kazdej zmianie ceny.",
         )
-        return 0
+        return 0, state
 
     # --- bez zmian ---
     if abs(price - previous) < 0.005:
-        save_state(state)
         print(f"  Bez zmian: {pln(price)} {currency}")
-        return 0
+        return 0, state
 
     # --- zmiana ceny ---
     delta = price - previous
@@ -562,8 +561,7 @@ def check_once() -> int:
 
     state["last_change"] = now.isoformat(timespec="seconds")
     state["previous_price"] = previous
-    save_state(state)
-    append_history(price, currency)
+    append_history(key, price, currency)
 
     body = (
         f"{arrow} o {pln(abs(delta))} {currency} ({sign}{abs(percent):.1f}%)\n\n"
@@ -574,7 +572,35 @@ def check_once() -> int:
     )
     print(f"  ZMIANA: {pln(previous)} -> {pln(price)} {currency} ({sign}{abs(percent):.1f}%)")
     notify(f"Rainbow {arrow}: {pln(price)} {currency}", body)
-    return 0
+    return 0, state
+
+
+def check_once() -> int:
+    urls = offer_urls()
+    if not urls:
+        print("BLAD: brak OFFER_URL - wklej adres oferty do .env")
+        return 2
+
+    store = load_state()
+    if "price" in store:  # stary plik z jedna oferta - przypisujemy do pierwszego linku
+        store = {offer_key(urls[0]): store}
+
+    worst = 0
+    for index, url in enumerate(urls, 1):
+        key = offer_key(url)
+        # Adresu nie logujemy - logi Actions sa publiczne (patrz safe_err).
+        print(f"\n=== oferta {index}/{len(urls)} [{key}] {store.get(key, {}).get('title', '')} ===")
+        try:
+            code, state = check_offer(url, store.get(key, {}))
+        except Exception as exc:
+            # Jedna wywrotka nie moze zablokowac pozostalych ofert.
+            print(f"  BLAD: {safe_err(exc, url)}")
+            code, state = 1, store.get(key, {})
+        store[key] = state
+        worst = max(worst, code)
+
+    save_state(store)
+    return worst
 
 
 # --------------------------------------------------------------------------- #
@@ -582,11 +608,16 @@ def check_once() -> int:
 # --------------------------------------------------------------------------- #
 
 def discover() -> int:
-    url = cfg("OFFER_URL")
-    if not url:
+    urls = offer_urls()
+    if not urls:
         print("BLAD: brak OFFER_URL w .env")
         return 2
+    for url in urls:
+        discover_one(url)
+    return 0
 
+
+def discover_one(url: str) -> None:
     selector = cfg("PRICE_SELECTOR")
     print(f"Pobieram {url}")
     print(f"PRICE_SELECTOR = {selector or '(pusty - automat)'}\n")
@@ -624,14 +655,13 @@ def discover() -> int:
             print(f"  blad: {exc}")
 
     if html:
-        dump = STATE_DIR / "debug_page.html"
+        dump = STATE_DIR / f"debug_page_{offer_key(url)}.html"
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         dump.write_text(html, encoding="utf-8")
         print(f"\nHTML zapisany do {dump} - mozesz w nim poszukac wlasnego selektora")
 
     print("\nPierwszy kandydat z listy to kwota, ktora monitor bedzie sledzil.")
     print("Jesli to nie ta - ustaw PRICE_LABEL (prosciej) albo PRICE_SELECTOR w .env")
-    return 0
 
 
 def test_notification() -> int:
@@ -662,9 +692,29 @@ def loop() -> int:
             return 0
 
 
+def selftest() -> int:
+    """Sprawdza rozbijanie OFFER_URL i migracje starego pliku stanu."""
+    os.environ["OFFER_URL"] = " https://a.pl/x?y=1 , https://b.pl/z\nhttps://c.pl/q "
+    urls = offer_urls()
+    assert urls == ["https://a.pl/x?y=1", "https://b.pl/z", "https://c.pl/q"], urls
+    assert len({offer_key(u) for u in urls}) == 3
+    assert offer_key(urls[0]) == offer_key(urls[0])  # stabilny miedzy przebiegami
+
+    stary = {"price": 100.0, "misses": 0}
+    nowy = {offer_key(urls[0]): stary} if "price" in stary else stary
+    assert nowy[offer_key(urls[0])]["price"] == 100.0
+
+    os.environ["OFFER_URL"] = ""
+    assert offer_urls() == []
+    print("selftest OK")
+    return 0
+
+
 def main() -> int:
     load_dotenv()
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    if arg == "--selftest":
+        return selftest()
     if arg in ("--discover", "-d"):
         return discover()
     if arg in ("--test", "-t"):
