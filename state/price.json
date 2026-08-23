@@ -46,5 +46,21 @@
     "last_check_date": "2026-08-23",
     "first_seen": "2026-08-15T13:37:59+00:00",
     "last_change": "2026-08-15T13:37:59+00:00"
+  },
+  "e024686a2b": {
+    "title": "Magal Maradiso Hotel by Aminess",
+    "price": 2803.0,
+    "currency": "PLN",
+    "source": "json-ld",
+    "extras": {
+      "Cena razem": 5606.0,
+      "Cena regularna": 3303.0,
+      "Najniższa cena z 30 dni": 2803.0,
+      "Zaliczka": 560.0
+    },
+    "misses": 0,
+    "last_check_date": "2026-08-23",
+    "first_seen": "2026-08-23T19:33:58+00:00",
+    "last_change": "2026-08-23T19:33:58+00:00"
   }
 }
