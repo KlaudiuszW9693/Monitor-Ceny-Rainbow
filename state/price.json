@@ -65,18 +65,19 @@
   },
   "ca7578f799": {
     "title": "Palm Beach Resort Hurghada",
-    "price": 3337.0,
+    "price": 3429.0,
     "currency": "PLN",
     "source": "json-ld",
     "extras": {
-      "Cena razem": 6674.0,
-      "Cena regularna": 3662.0,
+      "Cena razem": 6857.0,
+      "Cena regularna": 3754.0,
       "Najniższa cena z 30 dni": 3328.0,
-      "Zaliczka": 660.0
+      "Zaliczka": 680.0
     },
     "misses": 0,
     "last_check_date": "2026-08-28",
     "first_seen": "2026-08-23T19:40:33+00:00",
-    "last_change": "2026-08-23T19:40:33+00:00"
+    "last_change": "2026-08-28T16:51:12+00:00",
+    "previous_price": 3337.0
   }
 }
