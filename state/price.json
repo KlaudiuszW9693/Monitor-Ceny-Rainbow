@@ -74,8 +74,8 @@
       "Najniższa cena z 30 dni": 3328.0,
       "Zaliczka": 680.0
     },
-    "misses": 4,
-    "last_check_date": "2026-09-05",
+    "misses": 5,
+    "last_check_date": "2026-09-06",
     "first_seen": "2026-08-23T19:40:33+00:00",
     "last_change": "2026-08-28T16:51:12+00:00",
     "previous_price": 3337.0
